@@ -8,6 +8,9 @@
 
 import UIKit
 
+import VisionKit
+
+
 public protocol ItemView {
 
     var image: UIImage? { get set }
@@ -59,6 +62,13 @@ open class ItemBaseController<T: UIView>: UIViewController, ItemController, UIGe
     // TRANSITIONS
     fileprivate var swipeToDismissTransition: GallerySwipeToDismissTransition?
 
+    private var _analyzer: AnyObject?
+    @available(iOS 16.0, *)
+    private var analyzer: ImageAnalyzer? { _analyzer as? ImageAnalyzer }
+
+    private var _interaction: AnyObject?
+    @available(iOS 16.0, *)
+    private var interaction: ImageAnalysisInteraction? { _interaction as? ImageAnalysisInteraction }
 
     // MARK: - Initializers
 
@@ -68,6 +78,11 @@ open class ItemBaseController<T: UIView>: UIViewController, ItemController, UIGe
         self.itemCount = itemCount
         self.isInitialController = isInitialController
         self.fetchImageBlock = fetchImageBlock
+
+        if #available(iOS 16, *) {
+            self._analyzer = ImageAnalyzer()
+            self._interaction = ImageAnalysisInteraction()
+        }
 
         for item in configuration {
 
@@ -183,6 +198,12 @@ open class ItemBaseController<T: UIView>: UIViewController, ItemController, UIGe
 
         activityIndicatorView.startAnimating()
         view.addSubview(activityIndicatorView)
+
+        if #available(iOS 16, *), let interaction = self.interaction {
+            itemView.addInteraction(interaction)
+            interaction.delegate = self
+            interaction.preferredInteractionTypes = .automatic
+        }
     }
 
     // MARK: - View Controller Lifecycle
@@ -212,6 +233,30 @@ open class ItemBaseController<T: UIView>: UIViewController, ItemController, UIGe
 
                     self?.view.setNeedsLayout()
                     self?.view.layoutIfNeeded()
+
+                    if #available(iOS 16, *) {
+                        self?.analyzeCurrentImage()
+                    }
+                }
+            }
+        }
+    }
+
+    @available(iOS 16, *)
+    @objc func analyzeCurrentImage() {
+        if let image = itemView.image {
+            Task {
+                let configuration = ImageAnalyzer.Configuration([.text, .machineReadableCode])
+                do {
+                    let analysis = try await analyzer?.analyze(image, configuration: configuration)
+                    if image == self.itemView.image {
+                        interaction?.analysis = analysis;
+                        interaction?.preferredInteractionTypes = .automatic
+                    }
+                }
+                catch {
+                    // Handle error…
+                    print("---ERROR:")
                 }
             }
         }
@@ -633,4 +678,8 @@ open class ItemBaseController<T: UIView>: UIViewController, ItemController, UIGe
     public func closeDecorationViews(_ duration: TimeInterval) {
         // stub
     }
+}
+
+extension ItemBaseController: ImageAnalysisInteractionDelegate {
+
 }
